@@ -15,6 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 _GNULIB_VERSION = "788db09a9f88abbef73c97e8d7291c40455336d8"
+
 _GNULIB_SHA256 = "27ef79e649c95856e05f82414977f5e05d009310f91916b64806d1c61f913485"
 
 _URL_BASE = "github.com/jmillikin/rules_m4/releases/download/v0.1/gnulib-{}.tar.xz".format(_GNULIB_VERSION)
@@ -23,113 +24,6 @@ _GNULIB_URLS = [
     "https://mirror.bazel.build/" + _URL_BASE,
     "https://" + _URL_BASE,
 ]
-
-_CONFIG_HEADER = """
-#include "gnulib/lib/config.in.h"
-#include "gnulib/lib/arg-nonnull.h"
-
-#define PRODUCT "m4"
-#define PACKAGE "m4"
-#define PACKAGE_BUGREPORT "bug-m4@gnu.org"
-#define PACKAGE_NAME "GNU M4"
-#define PACKAGE_STRING "GNU M4 {M4_VERSION}"
-#define PACKAGE_TARNAME "m4"
-#define PACKAGE_URL "http://www.gnu.org/software/m4/"
-#define PACKAGE_VERSION "{M4_VERSION}"
-#define VERSION "{M4_VERSION}"
-
-#define RENAME_OPEN_FILE_WORKS 0
-#define HAVE_TMPFILE 1
-#define HAVE_SIGNAL_H 1
-#define RETSIGTYPE void
-"""
-
-_CONFIG_FOOTER = """
-#include <stdlib.h>
-
-/* Allow SYSCMD_SHELL to be injected at runtime, for users that don't
- * want arbitrary code execution in their template expansions.
-**/
-#define SYSCMD_SHELL m4_syscmd_shell()
-
-static inline const char* m4_syscmd_shell() {
-    const char *from_env = getenv("M4_SYSCMD_SHELL");
-    if (from_env) { return from_env; }
-    return "/bin/sh";
-}
-
-#if HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME
-extern char *program_invocation_short_name;
-#endif
-
-#if HAVE_DECL_PROGRAM_INVOCATION_NAME
-extern char *program_invocation_name;
-#endif
-
-#if HAVE_SECURE_GETENV
-char *secure_getenv(char const *name);
-#endif
-"""
-
-def gnulib_overlay(ctx, m4_version):
-    ctx.download_and_extract(
-        url = _GNULIB_URLS,
-        sha256 = _GNULIB_SHA256,
-        output = "gnulib",
-        stripPrefix = "gnulib-" + _GNULIB_VERSION,
-    )
-    ctx.symlink(ctx.attr._gnulib_build, "gnulib/BUILD.bazel")
-
-    config_header = _CONFIG_HEADER.format(
-        M4_VERSION = m4_version,
-    )
-    ctx.template("gnulib/config-darwin/config.h", ctx.attr._gnulib_config_darwin_h, substitutions = {
-        "{GNULIB_CONFIG_HEADER}": config_header,
-        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
-    }, executable = False)
-    ctx.template("gnulib/config-linux/config.h", ctx.attr._gnulib_config_linux_h, substitutions = {
-        "{GNULIB_CONFIG_HEADER}": config_header,
-        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
-    }, executable = False)
-    ctx.template("gnulib/config-windows/config.h", ctx.attr._gnulib_config_windows_h, substitutions = {
-        "{GNULIB_CONFIG_HEADER}": config_header,
-        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
-    }, executable = False)
-
-    for shim in _WINDOWS_STDLIB_SHIMS:
-        in_h = "gnulib/lib/{}.in.h".format(shim.replace("/", "_"))
-        out_h = "gnulib/config-windows/shim-libc/gnulib/{}.h".format(shim)
-        ctx.template(out_h, in_h, substitutions = _WINDOWS_AC_SUBST, executable = False)
-
-    # Older versions of M4 expect gnulib shims for exit() and strstr()
-    ctx.file("gnulib/lib/exit.h", "#include <stdlib.h>")
-    ctx.file("gnulib/lib/strstr.h", "#include <string.h>")
-
-    # gnulib inspects inner details of FILE* based on hard-coded structs defined
-    # for a handful of target platforms. Disable the whole mess so M4 can be
-    # built with musl libc.
-    #
-    # Context:
-    # * https://wiki.musl-libc.org/faq.html#Q:-I'm-getting-a-gnulib-error
-    # * https://github.com/jmillikin/rules_m4/issues/4
-    ctx.file("gnulib/lib/fpending.c", "#include <stdio.h>\nsize_t __fpending(FILE *fp) { return 1; }")
-    ctx.file("gnulib/lib/freadahead.c", "#include <stdio.h>\nsize_t freadahead(FILE *fp) { return 1; }")
-
-    # Stub out the sandbox-escaping charset alias loader.
-    ctx.template("gnulib/lib/localcharset.c", "gnulib/lib/localcharset.c", substitutions = {
-        "get_charset_aliases (void)": '''
-get_charset_aliases (void) { return ""; }
-#define LIBDIR ""
-static const char * _replaced_get_charset_aliases (void) _GL_UNUSED;
-static const char * _replaced_get_charset_aliases (void)
-''',
-    }, executable = False)
-
-    # Fix a mismatch between _Noreturn and __attribute_noreturn__ when
-    # building with a C11-aware GCC.
-    ctx.template("gnulib/lib/obstack.c", "gnulib/lib/obstack.c", substitutions = {
-        "static _Noreturn void": "static _Noreturn __attribute_noreturn__ void",
-    })
 
 _WINDOWS_STDLIB_SHIMS = [
     "alloca",
@@ -714,3 +608,110 @@ _WINDOWS_AC_SUBST = {
     "@GNULIB_WCTRANS@": "0",
     "@GNULIB_TOWCTRANS@": "0",
 }
+
+_CONFIG_HEADER = """
+#include "gnulib/lib/config.in.h"
+#include "gnulib/lib/arg-nonnull.h"
+
+#define PRODUCT "m4"
+#define PACKAGE "m4"
+#define PACKAGE_BUGREPORT "bug-m4@gnu.org"
+#define PACKAGE_NAME "GNU M4"
+#define PACKAGE_STRING "GNU M4 {M4_VERSION}"
+#define PACKAGE_TARNAME "m4"
+#define PACKAGE_URL "http://www.gnu.org/software/m4/"
+#define PACKAGE_VERSION "{M4_VERSION}"
+#define VERSION "{M4_VERSION}"
+
+#define RENAME_OPEN_FILE_WORKS 0
+#define HAVE_TMPFILE 1
+#define HAVE_SIGNAL_H 1
+#define RETSIGTYPE void
+"""
+
+_CONFIG_FOOTER = """
+#include <stdlib.h>
+
+/* Allow SYSCMD_SHELL to be injected at runtime, for users that don't
+ * want arbitrary code execution in their template expansions.
+**/
+#define SYSCMD_SHELL m4_syscmd_shell()
+
+static inline const char* m4_syscmd_shell() {
+    const char *from_env = getenv("M4_SYSCMD_SHELL");
+    if (from_env) { return from_env; }
+    return "/bin/sh";
+}
+
+#if HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME
+extern char *program_invocation_short_name;
+#endif
+
+#if HAVE_DECL_PROGRAM_INVOCATION_NAME
+extern char *program_invocation_name;
+#endif
+
+#if HAVE_SECURE_GETENV
+char *secure_getenv(char const *name);
+#endif
+"""
+
+def gnulib_overlay(ctx, m4_version):
+    ctx.download_and_extract(
+        url = _GNULIB_URLS,
+        sha256 = _GNULIB_SHA256,
+        output = "gnulib",
+        stripPrefix = "gnulib-" + _GNULIB_VERSION,
+    )
+    ctx.symlink(ctx.attr._gnulib_build, "gnulib/BUILD.bazel")
+
+    config_header = _CONFIG_HEADER.format(
+        M4_VERSION = m4_version,
+    )
+    ctx.template("gnulib/config-darwin/config.h", ctx.attr._gnulib_config_darwin_h, substitutions = {
+        "{GNULIB_CONFIG_HEADER}": config_header,
+        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
+    }, executable = False)
+    ctx.template("gnulib/config-linux/config.h", ctx.attr._gnulib_config_linux_h, substitutions = {
+        "{GNULIB_CONFIG_HEADER}": config_header,
+        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
+    }, executable = False)
+    ctx.template("gnulib/config-windows/config.h", ctx.attr._gnulib_config_windows_h, substitutions = {
+        "{GNULIB_CONFIG_HEADER}": config_header,
+        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
+    }, executable = False)
+
+    for shim in _WINDOWS_STDLIB_SHIMS:
+        in_h = "gnulib/lib/{}.in.h".format(shim.replace("/", "_"))
+        out_h = "gnulib/config-windows/shim-libc/gnulib/{}.h".format(shim)
+        ctx.template(out_h, in_h, substitutions = _WINDOWS_AC_SUBST, executable = False)
+
+    # Older versions of M4 expect gnulib shims for exit() and strstr()
+    ctx.file("gnulib/lib/exit.h", "#include <stdlib.h>")
+    ctx.file("gnulib/lib/strstr.h", "#include <string.h>")
+
+    # gnulib inspects inner details of FILE* based on hard-coded structs defined
+    # for a handful of target platforms. Disable the whole mess so M4 can be
+    # built with musl libc.
+    #
+    # Context:
+    # * https://wiki.musl-libc.org/faq.html#Q:-I'm-getting-a-gnulib-error
+    # * https://github.com/jmillikin/rules_m4/issues/4
+    ctx.file("gnulib/lib/fpending.c", "#include <stdio.h>\nsize_t __fpending(FILE *fp) { return 1; }")
+    ctx.file("gnulib/lib/freadahead.c", "#include <stdio.h>\nsize_t freadahead(FILE *fp) { return 1; }")
+
+    # Stub out the sandbox-escaping charset alias loader.
+    ctx.template("gnulib/lib/localcharset.c", "gnulib/lib/localcharset.c", substitutions = {
+        "get_charset_aliases (void)": '''
+get_charset_aliases (void) { return ""; }
+#define LIBDIR ""
+static const char * _replaced_get_charset_aliases (void) _GL_UNUSED;
+static const char * _replaced_get_charset_aliases (void)
+''',
+    }, executable = False)
+
+    # Fix a mismatch between _Noreturn and __attribute_noreturn__ when
+    # building with a C11-aware GCC.
+    ctx.template("gnulib/lib/obstack.c", "gnulib/lib/obstack.c", substitutions = {
+        "static _Noreturn void": "static _Noreturn __attribute_noreturn__ void",
+    })
